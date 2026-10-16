@@ -18,14 +18,15 @@
       1) เข้า Restaurant Tycoon 3 แล้วถ้ายังไม่มีสคริปต์รัน -> โหลด Master Suite ให้
       2) ถ้าเพิ่งหลุดแล้วกลับเข้ามาใหม่ (ไม่เกิน 10 นาที) คนละห้อง -> Teleport กลับห้องเดิมก่อน
       3) แหล่งที่มาของสคริปต์ (ไล่ตามลำดับ):
-         url ใน RT3_Session.json / URL_FALLBACK  ->  RT3_Self.lua (สำรองตอนเน็ตใช้ไม่ได้)
+         url บน GitHub  ->  RT3_Self.lua  ->  RT3_MasterSuite.lua (สำเนาในเครื่อง)
+         (ตัวสุดท้ายมีไว้กัน GitHub ล่ม / เน็ตหลุดตอน AFK ทั้งวัน)
     ==========================================================================
 ]]
 
 local RT3_PLACE    = 119048529960596   -- Restaurant Tycoon 3
 local PAIR_WINDOW  = 600               -- วินาที: ถือว่าเซสชันยัง "สด" (10 นาที)
 local URL_FALLBACK = "https://raw.githubusercontent.com/kritsadapaka-ux/rt3-master-suite/main/RT3-Master-Suite.lua"
-                                      -- ^ URL สำรองของ Master Suite (ถ้าโหลดจากไฟล์ RT3_Self.lua ไม่ได้)
+                                      -- ^ URL หลักของ Master Suite (ถ้าใช้ไม่ได้ จะถอยไปใช้ RT3_Self.lua -> RT3_MasterSuite.lua ในเครื่อง)
 
 -- ไม่ใช่ RT3 / มีสคริปต์รันอยู่แล้ว -> ไม่ต้องทำอะไร
 if game.PlaceId ~= RT3_PLACE then return end
@@ -83,6 +84,14 @@ if not loaded and typeof(readfile) == "function" and typeof(isfile) == "function
         loadstring(readfile("RT3_Self.lua"))()
     end)
     if loaded then _G.RT3_LoadedFrom = "file" end
+end
+
+-- 3.3 สำรองสุดท้าย: ไฟล์สำเนาในเครื่อง (กรณี GitHub ล่ม / เน็ตมีปัญหา)
+if not loaded and typeof(readfile) == "function" and typeof(isfile) == "function" and isfile("RT3_MasterSuite.lua") then
+    loaded = pcall(function()
+        loadstring(readfile("RT3_MasterSuite.lua"))()
+    end)
+    if loaded then _G.RT3_LoadedFrom = "local-copy" end
 end
 
 _G.RT3_LoadOK = loaded
