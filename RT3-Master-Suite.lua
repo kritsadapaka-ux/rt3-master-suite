@@ -3,14 +3,20 @@
 -- NEW v11.6 (AUTO CLAIM PLOT / กด Claim Plot ให้เองตอนเข้าเกม):
 --   [PL-1] ปัญหา: รีจอยเข้าเซิร์ฟเวอร์ใหม่ -> plot ถูกปล่อย -> เกมเด้งหน้า "Claim Plot"
 --          ค้างอยู่ตรงนั้น ทำอะไรต่อไม่ได้ (ต้องกดเองก่อน ถึงจะขึ้นหน้าเลือกเซฟบ้าน)
---          แก้: เฝ้าดู SelectPlot GUI -> กด Claim ให้เอง
---          วิธี (ไล่ตามลำดับ, ตัวไหนสำเร็จก่อนหยุด):
---            1) เรียก handler ของปุ่มตรง ๆ ผ่าน getconnections
---            2) ส่งปุ่ม gamepad ButtonY (ปุ่มนี้ผูกกับปุ่ม Claim อยู่)
---            3) คลิกเมาส์จริง (ปรับ offset ให้เอง + เช็คว่าเมาส์อยู่บนปุ่มจริงก่อนกด)
---            4) ยิง Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(plot ว่าง) + ปลดล็อกกล้องเอง
---          หมายเหตุ: เซฟบ้านไม่ได้ผูกกับ plot (ข้อมูลเซฟมีแค่ Cash/DayNumber/Name/Stars)
---                    -> claim plot ว่างอันไหนก็ได้ แล้วโหลดเซฟเดิมได้เสมอ
+--          แก้: เฝ้าดู SelectPlot GUI -> กด Claim ให้เอง แล้วเปิดหน้า Play/Load ต่อให้
+--          วิธีที่ "เทสต์ในเกมจริงแล้วใช้ได้":
+--            1) Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(plot ว่าง)
+--               -> คืน true แล้ว Player.Tycoon.Value ถูกตั้งให้
+--            2) ปลดล็อกกล้องที่เกมล็อกไว้ (ตัด connection บน CurrentCamera.Changed
+--               + ตั้ง CameraType=Custom + คืน WalkSpeed/JumpPower + เอา SelectPlot ออก)
+--            3) GameStart:OnTycoonClaimed(tycoon) -> เปิดหน้า Play/Load
+--               (ปกติตัวเกมยิง TycoonClaimed เอง แต่ตอนยิงข้ามปุ่มมันไม่ยิง -> เรียกซ้ำ)
+--          สำรองถ้าวิธีหลักพลาด: ส่งปุ่ม gamepad ButtonY -> คลิกเมาส์จริงบนปุ่ม
+--          หมายเหตุ 1: เซฟบ้านไม่ได้ผูกกับ plot (ข้อมูลเซฟมีแค่ Cash/DayNumber/Name/Stars)
+--                      -> claim plot ว่างอันไหนก็ได้ แล้วโหลดเซฟเดิมได้เสมอ
+--          หมายเหตุ 2: getconnections(btn.Activated)[1].Function() เรียกได้แต่ "ไม่มีผล"
+--                      (executor คืน proxy) -> ไม่ใช้วิธีนี้
+--          หมายเหตุ 3: SelectPlotButton.Activated ผูกผ่าน StandardButton -> ยิง signal เองไม่ได้
 -- NEW v11.5 (AUTO LOAD SAVE / กดโหลดบ้านให้เองตอนเข้าเกม):
 --   [LS-1] ปัญหา: เข้าเกมใหม่/รีจอย ทุกครั้งจะเด้งหน้า Play/Load ให้เลือกเซฟบ้าน ต้องกดเอง
 --          แก้: เฝ้าดู TycoonStartMenu ถ้าเปิดอยู่ -> เลือกเซฟล่าสุดแล้วกด Load ให้อัตโนมัติ
@@ -1476,23 +1482,60 @@ if _G.RT3_Settings.AutoClaimPlot ~= false then
             return o
         end
 
-        -- วิธี 1: เรียก handler ของปุ่มตรง ๆ ผ่าน getconnections
-        local function method1()
-            if typeof(getconnections) ~= "function" then return false end
-            local btn = getBtn()
-            if not btn then return false end
-            local ok, conns = pcall(getconnections, btn.Activated)
-            if not ok or type(conns) ~= "table" then return false end
-            for _, c in ipairs(conns) do
-                local f
-                pcall(function() f = c.Function or c["function"] or c.call or c.fire end)
-                if typeof(f) == "function" and pcall(f) then return true end
+        -- ปลดล็อกกล้อง/ตัวละครที่เกมล็อกไว้ตอนหน้า Claim Plot
+        -- (ตัวเกมทำเองใน selectPlot() แต่เราเรียกข้ามปุ่ม เลยต้องทำเอง)
+        local function unlockAfterClaim()
+            local cam = workspace.CurrentCamera
+            if typeof(getconnections) == "function" then
+                local cok, conns = pcall(getconnections, cam.Changed)
+                if cok and type(conns) == "table" then
+                    for _, c in ipairs(conns) do
+                        pcall(function() c:Disconnect() end)
+                        pcall(function() c.Object:Disconnect() end)
+                    end
+                end
             end
-            return false
+            cam.CameraType = Enum.CameraType.Custom
+            local ch = plr.Character
+            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+            if hum then
+                cam.CameraSubject = hum
+                hum.WalkSpeed = 16
+                hum.JumpPower = 50
+            end
+            local g = plr.PlayerGui:FindFirstChild("SelectPlot")
+            if g then g.Parent = nil end
+            plr:SetAttribute("IsInGameStart", nil)
+        end
+
+        -- เปิดหน้า Play/Load ให้ (ปกติตัวเกมเรียกเองตอนได้ plot แต่บางทีไม่ยิง -> เรียกซ้ำได้)
+        local function openStartMenu()
+            local ok, GS = pcall(require, plr.PlayerScripts.Source.Systems.GameStart)
+            if not ok or not GS then return false end
+            local ty = myTycoon()
+            if not ty then return false end
+            pcall(function() GS:OnTycoonClaimed(ty) end)
+            return true
+        end
+
+        -- วิธี 1 (หลัก - เทสต์ในเกมจริงแล้วใช้ได้): ยิง ClaimTycoon ตรง ๆ -> ปลดล็อก -> เปิดเมนู
+        local function methodDirect()
+            local list = freePlots()
+            if #list == 0 then return false end
+            local ok, res = pcall(function()
+                return RS.Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(list[1])
+            end)
+            if not ok or not res then return false end
+            task.wait(0.6)
+            if not myTycoon() then return false end
+            unlockAfterClaim()
+            task.wait(0.3)
+            openStartMenu()
+            return true
         end
 
         -- วิธี 2: ส่งปุ่ม gamepad ButtonY (ปุ่ม Claim ผูกกับปุ่มนี้อยู่)
-        local function method2()
+        local function methodGamepad()
             local ok = pcall(function() keypress(Enum.KeyCode.ButtonY) end)
             if ok then
                 task.wait(0.1)
@@ -1502,7 +1545,7 @@ if _G.RT3_Settings.AutoClaimPlot ~= false then
         end
 
         -- วิธี 3: คลิกเมาส์จริง (ปรับ offset ให้เอง + เช็คก่อนว่าอยู่บนปุ่มจริง)
-        local function method3()
+        local function methodClick()
             if typeof(mousemoveabs) ~= "function" or typeof(mouse1click) ~= "function" then return false end
             local btn = getBtn()
             if not btn then return false end
@@ -1525,47 +1568,8 @@ if _G.RT3_Settings.AutoClaimPlot ~= false then
             return true
         end
 
-        -- วิธี 4 (ทางสุดท้าย): ยิง ClaimTycoon ตรง ๆ + ปลดล็อกกล้อง/ตัวละครเอง
-        local function method4()
-            local list = freePlots()
-            if #list == 0 then return false end
-            local ok, res = pcall(function()
-                return RS.Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(list[1])
-            end)
-            if not ok or not res then return false end
-            task.wait(0.5)
-            pcall(function()
-                local cam = workspace.CurrentCamera
-                if typeof(getconnections) == "function" then
-                    local cok, conns = pcall(getconnections, cam.Changed)
-                    if cok and type(conns) == "table" then
-                        for _, c in ipairs(conns) do
-                            local src = ""
-                            pcall(function() src = tostring(c.Script or "") end)
-                            if string.find(src, "ReplicatedFirst") then
-                                pcall(function() c:Disconnect() end)
-                                pcall(function() c.Object:Disconnect() end)
-                            end
-                        end
-                    end
-                end
-                cam.CameraType = Enum.CameraType.Custom
-                local ch = plr.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    cam.CameraSubject = hum
-                    hum.WalkSpeed = 16
-                    hum.JumpPower = 50
-                end
-                local g = plr.PlayerGui:FindFirstChild("SelectPlot")
-                if g then g.Parent = nil end
-                plr:SetAttribute("IsInGameStart", nil)
-            end)
-            return true
-        end
-
-        local methodNames = { "conn-handler", "gamepad", "real-click", "direct+cleanup" }
-        local methods     = { method1, method2, method3, method4 }
+        local methodNames = { "direct+cleanup", "gamepad", "real-click" }
+        local methods     = { methodDirect, methodGamepad, methodClick }
 
         local lastTry = 0
         local tries   = 0
