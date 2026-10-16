@@ -70,9 +70,15 @@ end
 local loaded = false
 
 -- 3.1 สำเนาในเครื่องก่อน (อัปเดตพร้อมกับ GitHub ทุกครั้ง -> ได้เวอร์ชันล่าสุดทันที ไม่ต้องรอ CDN)
-if typeof(readfile) == "function" and typeof(isfile) == "function" and isfile("RT3_MasterSuite.lua") then
+--     ใช้ readfile ตรง ๆ ไม่ใช้ isfile (กันบางจังหวะที่ isfile ยังไม่พร้อม)
+local localSrc
+pcall(function()
+    localSrc = readfile("RT3_MasterSuite.lua")
+end)
+
+if typeof(localSrc) == "string" and #localSrc > 1000 then
     loaded = pcall(function()
-        loadstring(readfile("RT3_MasterSuite.lua"))()
+        loadstring(localSrc)()
     end)
     if loaded then _G.RT3_LoadedFrom = "local-copy" end
 end
