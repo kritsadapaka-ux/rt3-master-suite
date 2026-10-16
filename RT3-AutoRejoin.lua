@@ -24,7 +24,8 @@
 
 local RT3_PLACE    = 119048529960596   -- Restaurant Tycoon 3
 local PAIR_WINDOW  = 600               -- วินาที: ถือว่าเซสชันยัง "สด" (10 นาที)
-local URL_FALLBACK = ""                -- (ไม่บังคับ) raw URL ของสคริปต์
+local URL_FALLBACK = "https://raw.githubusercontent.com/kritsadapaka-ux/rt3-master-suite/main/RT3-Master-Suite.lua"
+                                      -- ^ URL สำรองของ Master Suite (ถ้าโหลดจากไฟล์ RT3_Self.lua ไม่ได้)
 
 -- ไม่ใช่ RT3 / มีสคริปต์รันอยู่แล้ว -> ไม่ต้องทำอะไร
 if game.PlaceId ~= RT3_PLACE then return end
