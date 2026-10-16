@@ -1,5 +1,12 @@
--- Restaurant Tycoon 3: Master Suite v11.4 (Stable Edition)
+-- Restaurant Tycoon 3: Master Suite v11.5 (Stable Edition)
 -- Base: v10.0 (Delivery, CurrencyDrops, RushHour, Farming, ScavengerHunt)
+-- NEW v11.5 (AUTO LOAD SAVE / กดโหลดบ้านให้เองตอนเข้าเกม):
+--   [LS-1] ปัญหา: เข้าเกมใหม่/รีจอย ทุกครั้งจะเด้งหน้า Play/Load ให้เลือกเซฟบ้าน ต้องกดเอง
+--          แก้: เฝ้าดู TycoonStartMenu ถ้าเปิดอยู่ -> เลือกเซฟล่าสุดแล้วกด Load ให้อัตโนมัติ
+--          กลไก: TycoonStartMenu.Props.LoadGamePressed(suffix) = ฟังก์ชันเดียวกับที่ปุ่ม Load เรียก
+--                (ข้างในยิง Events.Restaurant.GameStart.LoadGameRequested:FireServer(suffix))
+--          เลือกเซฟจาก PlayerData.DataKey.Restaurants -> ตัวที่ LastAccessedTimestamp ใหม่สุด (ข้าม Archived)
+--          ปิด/เปิดได้ที่แท็บ Extra Systems -> "Auto Load Save"
 -- FIX v11.4 (AFK ALL DAY / กันหลุด):
 --   [AFK-1] ต้นเหตุหลัก: สคริปต์ไม่มีระบบกัน AFK เลย -> Roblox เตะทิ้งเมื่อไม่มี input จริง ~20 นาที
 --           แก้: VirtualUser:CaptureController + ClickButton2 (จำลอง input จริง) เมื่อ Idled ยิง
@@ -113,6 +120,7 @@ _G.RT3_Settings = {
     AutoRejoin         = true,     -- พยายามกลับเข้าห้องเดิมถ้าหลุด
     AutoRejoinURL      = "https://raw.githubusercontent.com/kritsadapaka-ux/rt3-master-suite/main/RT3-Master-Suite.lua",
                                    -- ^ URL ของ Master Suite เอง (ใช้เป็นแหล่งสำรองตอนกลับเข้าเกมใหม่)
+    AutoLoadSave       = true,     -- [v11.5] กด "Load" ในหน้า Play/Load ให้เองตอนเข้าเกมใหม่ (รีจอยแล้วไม่ต้องกดเอง)
 
     Friend_MasterFarm    = true,
     Friend_AutoSeat      = true,
@@ -145,8 +153,8 @@ local okUI, uiErr = pcall(function()
 Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 Window = Rayfield:CreateWindow({
-    Name = "Restaurant Tycoon 3 | Master Suite v11.4",
-    LoadingTitle = "RT3 Suite v11.4",
+    Name = "Restaurant Tycoon 3 | Master Suite v11.5",
+    LoadingTitle = "RT3 Suite v11.5",
     LoadingSubtitle = "Stable Edition",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
@@ -230,7 +238,7 @@ ExtraTab:CreateToggle({ Name = "Auto Harvest Farm Tiles",           CurrentValue
 ExtraTab:CreateToggle({ Name = "Auto Collect Scavenger Hunt Items", CurrentValue = true, Flag = "AutoScav",
     Callback = function(v) _G.RT3_Settings.AutoScavenger = v end })
 
-ExtraTab:CreateSection("AFK / กันหลุด (v11.4)")
+ExtraTab:CreateSection("AFK / กันหลุด (v11.5)")
 ExtraTab:CreateToggle({ Name = "Anti-AFK (กันเตะ idle 20 นาที)", CurrentValue = true, Flag = "AntiAFK",
     Callback = function(v) _G.RT3_Settings.AntiAFK = v end })
 ExtraTab:CreateSlider({ Name = "จังหวะเต้นกัน idle", Range = {20, 300}, Increment = 5, Suffix = " วิ",
@@ -244,6 +252,8 @@ end })
 ExtraTab:CreateInput({ Name = "AutoRejoinURL (ไม่บังคับ)", PlaceholderText = "raw URL ของสคริปต์ หลังอัป GitHub",
     RemoveTextAfterFocusLost = false,
     Callback = function(txt) _G.RT3_Settings.AutoRejoinURL = tostring(txt) end })
+ExtraTab:CreateToggle({ Name = "Auto Load Save (กดโหลดบ้านให้เองตอนเข้าเกม)", CurrentValue = true, Flag = "AutoLoadSave",
+    Callback = function(v) _G.RT3_Settings.AutoLoadSave = v end })
 
 -- FRIEND TAB
 FriendTab:CreateToggle({ Name = "Help Friends (Master Toggle)", CurrentValue = true, Flag = "FriendMaster",
@@ -1343,7 +1353,7 @@ if typeof(writefile) == "function" then
                         jobId     = game.JobId,
                         ts        = os.time(),
                         pulses    = _G.RT3_AFK.pulses,
-                        version   = "v11.4",
+                        version   = "v11.5",
                         url       = _G.RT3_Settings.AutoRejoinURL or "",
                     }))
                 end)
@@ -1357,6 +1367,64 @@ end
 if _G.RT3_Settings.AutoRejoinURL ~= "" and typeof(queue_on_teleport) == "function" then
     pcall(function()
         queue_on_teleport('loadstring(game:HttpGet("' .. _G.RT3_Settings.AutoRejoinURL .. '"))()')
+    end)
+end
+
+-- (5) AUTO LOAD SAVE (v11.5)
+--     เข้าเกมใหม่ / รีจอย -> หน้า Play/Load เด้งขึ้น -> กดโหลดเซฟบ้านให้เอง
+--     ใช้ฟังก์ชันเดียวกับปุ่ม "Load" ในเกม: TycoonStartMenu.Props.LoadGamePressed(suffix)
+--     (ข้างในยิง Events.Restaurant.GameStart.LoadGameRequested:FireServer(suffix))
+if _G.RT3_Settings.AutoLoadSave ~= false then
+    task.spawn(function()
+        local PS = game.Players.LocalPlayer.PlayerScripts
+        local GameStart, StartMenu, PlayerData
+
+        local function safeRequire()
+            pcall(function()
+                PlayerData = require(PS.Source.Systems.PlayerData)
+                GameStart  = require(PS.Source.Systems.GameStart)
+                StartMenu  = require(PS.Source.Interfaces.TycoonStartMenu)
+            end)
+        end
+
+        -- เลือกเซฟที่จะโหลด: ตัวที่เล่นล่าสุด และไม่ถูก Archive
+        local function pickSaveSuffix()
+            if not PlayerData then return nil end
+            local ok, rest = pcall(function()
+                return PlayerData:GetKey(PlayerData.DataStoreType.User, PlayerData.DataKey.Restaurants)
+            end)
+            if not ok or type(rest) ~= "table" then return nil end
+            local best, bestTs = nil, -1
+            for suffix, info in pairs(rest) do
+                if type(info) == "table" and not info.Archived then
+                    local ts = tonumber(info.LastAccessedTimestamp) or 0
+                    if ts > bestTs then best, bestTs = tostring(suffix), ts end
+                end
+            end
+            return best
+        end
+
+        local lastTry = 0
+        while true do
+            task.wait(1.5)
+            _G.RT3_LoadSaveWatch = os.clock()
+            if _G.RT3_Settings.AutoLoadSave ~= false then
+                if not GameStart then safeRequire() end
+                if GameStart and GameStart.IsActive and StartMenu and StartMenu.Props
+                   and StartMenu.Props.LoadGamePressed and (os.clock() - lastTry) > 15 then
+                    local suffix = pickSaveSuffix()
+                    if suffix then
+                        lastTry = os.clock()
+                        local ok = pcall(function() StartMenu.Props.LoadGamePressed(suffix) end)
+                        if ok then
+                            notify("Auto Load Save", ("เลือกบ้านให้แล้ว: %s (รีจอยแล้วไม่ต้องกดเอง)"):format(suffix), 5)
+                        else
+                            notify("Auto Load Save", "กดโหลดบ้านไม่สำเร็จ เดี๋ยวลองใหม่", 4)
+                        end
+                    end
+                end
+            end
+        end
     end)
 end
 end
@@ -1375,4 +1443,4 @@ task.spawn(function()
 end)
 end
 
-notify("RT3 Suite v11.4 Active", "AFK Guardian ONLINE! (กันเตะ idle + Auto Rejoin) | Serving Fix + Tip Jar + Stability", 6)
+notify("RT3 Suite v11.5 Active", "AFK Guardian ONLINE! (กันเตะ idle + Auto Rejoin + Auto Load Save) | Serving Fix + Tip Jar + Stability", 6)
