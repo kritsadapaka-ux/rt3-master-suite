@@ -1,5 +1,16 @@
--- Restaurant Tycoon 3: Master Suite v11.5 (Stable Edition)
+-- Restaurant Tycoon 3: Master Suite v11.6 (Stable Edition)
 -- Base: v10.0 (Delivery, CurrencyDrops, RushHour, Farming, ScavengerHunt)
+-- NEW v11.6 (AUTO CLAIM PLOT / กด Claim Plot ให้เองตอนเข้าเกม):
+--   [PL-1] ปัญหา: รีจอยเข้าเซิร์ฟเวอร์ใหม่ -> plot ถูกปล่อย -> เกมเด้งหน้า "Claim Plot"
+--          ค้างอยู่ตรงนั้น ทำอะไรต่อไม่ได้ (ต้องกดเองก่อน ถึงจะขึ้นหน้าเลือกเซฟบ้าน)
+--          แก้: เฝ้าดู SelectPlot GUI -> กด Claim ให้เอง
+--          วิธี (ไล่ตามลำดับ, ตัวไหนสำเร็จก่อนหยุด):
+--            1) เรียก handler ของปุ่มตรง ๆ ผ่าน getconnections
+--            2) ส่งปุ่ม gamepad ButtonY (ปุ่มนี้ผูกกับปุ่ม Claim อยู่)
+--            3) คลิกเมาส์จริง (ปรับ offset ให้เอง + เช็คว่าเมาส์อยู่บนปุ่มจริงก่อนกด)
+--            4) ยิง Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(plot ว่าง) + ปลดล็อกกล้องเอง
+--          หมายเหตุ: เซฟบ้านไม่ได้ผูกกับ plot (ข้อมูลเซฟมีแค่ Cash/DayNumber/Name/Stars)
+--                    -> claim plot ว่างอันไหนก็ได้ แล้วโหลดเซฟเดิมได้เสมอ
 -- NEW v11.5 (AUTO LOAD SAVE / กดโหลดบ้านให้เองตอนเข้าเกม):
 --   [LS-1] ปัญหา: เข้าเกมใหม่/รีจอย ทุกครั้งจะเด้งหน้า Play/Load ให้เลือกเซฟบ้าน ต้องกดเอง
 --          แก้: เฝ้าดู TycoonStartMenu ถ้าเปิดอยู่ -> เลือกเซฟล่าสุดแล้วกด Load ให้อัตโนมัติ
@@ -121,6 +132,7 @@ _G.RT3_Settings = {
     AutoRejoinURL      = "https://raw.githubusercontent.com/kritsadapaka-ux/rt3-master-suite/main/RT3-Master-Suite.lua",
                                    -- ^ URL ของ Master Suite เอง (ใช้เป็นแหล่งสำรองตอนกลับเข้าเกมใหม่)
     AutoLoadSave       = true,     -- [v11.5] กด "Load" ในหน้า Play/Load ให้เองตอนเข้าเกมใหม่ (รีจอยแล้วไม่ต้องกดเอง)
+    AutoClaimPlot      = true,     -- [v11.6] กด "Claim Plot" ให้เองตอนรีจอยเข้าเซิร์ฟเวอร์ใหม่
 
     Friend_MasterFarm    = true,
     Friend_AutoSeat      = true,
@@ -153,8 +165,8 @@ local okUI, uiErr = pcall(function()
 Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 Window = Rayfield:CreateWindow({
-    Name = "Restaurant Tycoon 3 | Master Suite v11.5",
-    LoadingTitle = "RT3 Suite v11.5",
+    Name = "Restaurant Tycoon 3 | Master Suite v11.6",
+    LoadingTitle = "RT3 Suite v11.6",
     LoadingSubtitle = "Stable Edition",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false },
@@ -238,7 +250,7 @@ ExtraTab:CreateToggle({ Name = "Auto Harvest Farm Tiles",           CurrentValue
 ExtraTab:CreateToggle({ Name = "Auto Collect Scavenger Hunt Items", CurrentValue = true, Flag = "AutoScav",
     Callback = function(v) _G.RT3_Settings.AutoScavenger = v end })
 
-ExtraTab:CreateSection("AFK / กันหลุด (v11.5)")
+ExtraTab:CreateSection("AFK / กันหลุด (v11.6)")
 ExtraTab:CreateToggle({ Name = "Anti-AFK (กันเตะ idle 20 นาที)", CurrentValue = true, Flag = "AntiAFK",
     Callback = function(v) _G.RT3_Settings.AntiAFK = v end })
 ExtraTab:CreateSlider({ Name = "จังหวะเต้นกัน idle", Range = {20, 300}, Increment = 5, Suffix = " วิ",
@@ -254,6 +266,8 @@ ExtraTab:CreateInput({ Name = "AutoRejoinURL (ไม่บังคับ)", Pla
     Callback = function(txt) _G.RT3_Settings.AutoRejoinURL = tostring(txt) end })
 ExtraTab:CreateToggle({ Name = "Auto Load Save (กดโหลดบ้านให้เองตอนเข้าเกม)", CurrentValue = true, Flag = "AutoLoadSave",
     Callback = function(v) _G.RT3_Settings.AutoLoadSave = v end })
+ExtraTab:CreateToggle({ Name = "Auto Claim Plot (กด Claim Plot ให้เองตอนรีจอย)", CurrentValue = true, Flag = "AutoClaimPlot",
+    Callback = function(v) _G.RT3_Settings.AutoClaimPlot = v end })
 
 -- FRIEND TAB
 FriendTab:CreateToggle({ Name = "Help Friends (Master Toggle)", CurrentValue = true, Flag = "FriendMaster",
@@ -1353,7 +1367,7 @@ if typeof(writefile) == "function" then
                         jobId     = game.JobId,
                         ts        = os.time(),
                         pulses    = _G.RT3_AFK.pulses,
-                        version   = "v11.5",
+                        version   = "v11.6",
                         url       = _G.RT3_Settings.AutoRejoinURL or "",
                     }))
                 end)
@@ -1410,8 +1424,10 @@ if _G.RT3_Settings.AutoLoadSave ~= false then
             _G.RT3_LoadSaveWatch = os.clock()
             if _G.RT3_Settings.AutoLoadSave ~= false then
                 if not GameStart then safeRequire() end
+                local ty = game.Players.LocalPlayer:FindFirstChild("Tycoon")
                 if GameStart and GameStart.IsActive and StartMenu and StartMenu.Props
-                   and StartMenu.Props.LoadGamePressed and (os.clock() - lastTry) > 15 then
+                   and StartMenu.Props.LoadGamePressed and ty and ty.Value
+                   and (os.clock() - lastTry) > 15 then
                     local suffix = pickSaveSuffix()
                     if suffix then
                         lastTry = os.clock()
@@ -1420,6 +1436,157 @@ if _G.RT3_Settings.AutoLoadSave ~= false then
                             notify("Auto Load Save", ("เลือกบ้านให้แล้ว: %s (รีจอยแล้วไม่ต้องกดเอง)"):format(suffix), 5)
                         else
                             notify("Auto Load Save", "กดโหลดบ้านไม่สำเร็จ เดี๋ยวลองใหม่", 4)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- (6) AUTO CLAIM PLOT (v11.6)
+--     รีจอยเข้าเซิร์ฟเวอร์ใหม่ -> plot ถูกปล่อย -> เกมเด้งหน้า "Claim Plot" ค้าง
+--     กดให้เองอัตโนมัติ (ไล่ตามวิธี 1->4 ตัวไหนสำเร็จก่อนหยุด)
+if _G.RT3_Settings.AutoClaimPlot ~= false then
+    task.spawn(function()
+        local plr = game.Players.LocalPlayer
+        local RS  = game:GetService("ReplicatedStorage")
+
+        local function myTycoon()
+            local t = plr:FindFirstChild("Tycoon")
+            return t and t.Value
+        end
+
+        local function getBtn()
+            local g = plr.PlayerGui:FindFirstChild("SelectPlot")
+            return g and g.Frame and g.Frame.SelectPlotArea and g.Frame.SelectPlotArea.SelectPlotButton
+        end
+
+        local function freePlots()
+            local t = workspace:FindFirstChild("Tycoons")
+            local o = {}
+            if not t then return o end
+            for _, c in ipairs(t:GetChildren()) do
+                local p = c:FindFirstChild("Player")
+                if not p or p.Value == nil then o[#o + 1] = c end
+            end
+            table.sort(o, function(a, b)
+                return (a:GetAttribute("PlotId") or 0) < (b:GetAttribute("PlotId") or 0)
+            end)
+            return o
+        end
+
+        -- วิธี 1: เรียก handler ของปุ่มตรง ๆ ผ่าน getconnections
+        local function method1()
+            if typeof(getconnections) ~= "function" then return false end
+            local btn = getBtn()
+            if not btn then return false end
+            local ok, conns = pcall(getconnections, btn.Activated)
+            if not ok or type(conns) ~= "table" then return false end
+            for _, c in ipairs(conns) do
+                local f
+                pcall(function() f = c.Function or c["function"] or c.call or c.fire end)
+                if typeof(f) == "function" and pcall(f) then return true end
+            end
+            return false
+        end
+
+        -- วิธี 2: ส่งปุ่ม gamepad ButtonY (ปุ่ม Claim ผูกกับปุ่มนี้อยู่)
+        local function method2()
+            local ok = pcall(function() keypress(Enum.KeyCode.ButtonY) end)
+            if ok then
+                task.wait(0.1)
+                pcall(function() keyrelease(Enum.KeyCode.ButtonY) end)
+            end
+            return ok
+        end
+
+        -- วิธี 3: คลิกเมาส์จริง (ปรับ offset ให้เอง + เช็คก่อนว่าอยู่บนปุ่มจริง)
+        local function method3()
+            if typeof(mousemoveabs) ~= "function" or typeof(mouse1click) ~= "function" then return false end
+            local btn = getBtn()
+            if not btn then return false end
+            local label = btn:FindFirstChild("TextLabel")
+            if label and label.Text ~= "Claim Plot" then return false end
+            local UIS = game:GetService("UserInputService")
+            if not pcall(mousemoveabs, 500, 500) then return false end
+            task.wait(0.15)
+            local probe = UIS:GetMouseLocation()
+            local dx, dy = probe.X - 500, probe.Y - 500
+            local p, s = btn.AbsolutePosition, btn.AbsoluteSize
+            local cx, cy = p.X + s.X / 2, p.Y + s.Y / 2
+            pcall(mousemoveabs, cx - dx, cy - dy)
+            task.wait(0.15)
+            local loc = UIS:GetMouseLocation()
+            if loc.X < p.X or loc.X > p.X + s.X or loc.Y < p.Y or loc.Y > p.Y + s.Y then
+                return false   -- เมาส์ไม่อยู่บนปุ่ม -> ไม่กด กันกดพลาด
+            end
+            pcall(mouse1click)
+            return true
+        end
+
+        -- วิธี 4 (ทางสุดท้าย): ยิง ClaimTycoon ตรง ๆ + ปลดล็อกกล้อง/ตัวละครเอง
+        local function method4()
+            local list = freePlots()
+            if #list == 0 then return false end
+            local ok, res = pcall(function()
+                return RS.Events.Restaurant.GameStart.ClaimTycoon:InvokeServer(list[1])
+            end)
+            if not ok or not res then return false end
+            task.wait(0.5)
+            pcall(function()
+                local cam = workspace.CurrentCamera
+                if typeof(getconnections) == "function" then
+                    local cok, conns = pcall(getconnections, cam.Changed)
+                    if cok and type(conns) == "table" then
+                        for _, c in ipairs(conns) do
+                            local src = ""
+                            pcall(function() src = tostring(c.Script or "") end)
+                            if string.find(src, "ReplicatedFirst") then
+                                pcall(function() c:Disconnect() end)
+                                pcall(function() c.Object:Disconnect() end)
+                            end
+                        end
+                    end
+                end
+                cam.CameraType = Enum.CameraType.Custom
+                local ch = plr.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    cam.CameraSubject = hum
+                    hum.WalkSpeed = 16
+                    hum.JumpPower = 50
+                end
+                local g = plr.PlayerGui:FindFirstChild("SelectPlot")
+                if g then g.Parent = nil end
+                plr:SetAttribute("IsInGameStart", nil)
+            end)
+            return true
+        end
+
+        local methodNames = { "conn-handler", "gamepad", "real-click", "direct+cleanup" }
+        local methods     = { method1, method2, method3, method4 }
+
+        local lastTry = 0
+        local tries   = 0
+        _G.RT3_ClaimNow = function() lastTry = -1000; return "queued" end   -- ยิงทดสอบเองได้
+        while true do
+            task.wait(2)
+            _G.RT3_ClaimWatch = os.clock()
+            if _G.RT3_Settings.AutoClaimPlot ~= false and not myTycoon() and getBtn() then
+                if (os.clock() - lastTry) > 8 then
+                    lastTry = os.clock()
+                    tries = tries + 1
+                    for i = 1, #methods do
+                        local ok, err = pcall(methods[i])
+                        task.wait(0.8)
+                        if myTycoon() then
+                            _G.RT3_ClaimLog = ("OK วิธี #%d %s (รอบ %d)"):format(i, methodNames[i], tries)
+                            notify("Auto Claim Plot", ("ได้ plot แล้ว (วิธี %s)"):format(methodNames[i]), 5)
+                            break
+                        end
+                        if not ok then
+                            _G.RT3_ClaimLog = ("วิธี #%d %s error: %s"):format(i, methodNames[i], tostring(err))
                         end
                     end
                 end
@@ -1443,4 +1610,4 @@ task.spawn(function()
 end)
 end
 
-notify("RT3 Suite v11.5 Active", "AFK Guardian ONLINE! (กันเตะ idle + Auto Rejoin + Auto Load Save) | Serving Fix + Tip Jar + Stability", 6)
+notify("RT3 Suite v11.6 Active", "AFK Guardian ONLINE! (กันเตะ idle + Auto Rejoin + Auto Claim Plot + Auto Load Save) | Serving Fix + Tip Jar + Stability", 6)
