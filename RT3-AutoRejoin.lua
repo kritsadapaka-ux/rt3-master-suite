@@ -77,20 +77,30 @@ pcall(function()
 end)
 
 if typeof(localSrc) == "string" and #localSrc > 1000 then
-    loaded = pcall(function()
+    local ok, err = pcall(function()
         loadstring(localSrc)()
     end)
-    if loaded then _G.RT3_LoadedFrom = "local-copy" end
+    loaded = ok
+    if ok then
+        _G.RT3_LoadedFrom = "local-copy"
+    else
+        _G.RT3_LocalLoadErr = tostring(err)   -- เก็บไว้ดูว่าทำไมโหลดสำเนาในเครื่องไม่ผ่าน
+    end
 end
 
 -- 3.2 จาก URL (ในเซสชัน หรือ URL_FALLBACK)
 if not loaded then
     local url = (session and tostring(session.url or "") ~= "" and tostring(session.url)) or URL_FALLBACK
     if url and url ~= "" then
-        loaded = pcall(function()
+        local ok, err = pcall(function()
             loadstring(game:HttpGet(url))()
         end)
-        if loaded then _G.RT3_LoadedFrom = "url" end
+        loaded = ok
+        if ok then
+            _G.RT3_LoadedFrom = "url"
+        else
+            _G.RT3_UrlLoadErr = tostring(err)   -- เก็บไว้ดูว่าทำไมโหลดจาก URL ไม่ผ่าน
+        end
     end
 end
 
