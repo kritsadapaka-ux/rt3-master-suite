@@ -111,7 +111,8 @@ _G.RT3_Settings = {
     AntiAFK            = true,     -- จำลอง input กัน Roblox เตะทิ้ง idle 20 นาที
     AntiAFKInterval    = 45,       -- เต้นกัน idle ทุกกี่วินาที (วินาที)
     AutoRejoin         = true,     -- พยายามกลับเข้าห้องเดิมถ้าหลุด
-    AutoRejoinURL      = "",       -- (ไม่บังคับ) URL สคริปต์ เพื่อ auto-load ตอนกลับเข้าใหม่
+    AutoRejoinURL      = "https://raw.githubusercontent.com/kritsadapaka-ux/rt3-master-suite/main/RT3-Master-Suite.lua",
+                                   -- ^ URL ของ Master Suite เอง (ใช้เป็นแหล่งสำรองตอนกลับเข้าเกมใหม่)
 
     Friend_MasterFarm    = true,
     Friend_AutoSeat      = true,
