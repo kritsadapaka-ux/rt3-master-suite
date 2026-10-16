@@ -18,8 +18,8 @@
       1) เข้า Restaurant Tycoon 3 แล้วถ้ายังไม่มีสคริปต์รัน -> โหลด Master Suite ให้
       2) ถ้าเพิ่งหลุดแล้วกลับเข้ามาใหม่ (ไม่เกิน 10 นาที) คนละห้อง -> Teleport กลับห้องเดิมก่อน
       3) แหล่งที่มาของสคริปต์ (ไล่ตามลำดับ):
-         url บน GitHub  ->  RT3_Self.lua  ->  RT3_MasterSuite.lua (สำเนาในเครื่อง)
-         (ตัวสุดท้ายมีไว้กัน GitHub ล่ม / เน็ตหลุดตอน AFK ทั้งวัน)
+         RT3_MasterSuite.lua (สำเนาในเครื่อง)  ->  url บน GitHub  ->  RT3_Self.lua
+         (สำเนาในเครื่องมาก่อน เพื่อไม่ต้องรอ CDN ของ GitHub ที่ชอบค้างของเก่า)
     ==========================================================================
 ]]
 
@@ -69,29 +69,31 @@ end
 -- ------------------------------------------------------------------
 local loaded = false
 
--- 3.1 จาก URL (ในเซสชัน หรือ URL_FALLBACK)
-local url = (session and tostring(session.url or "") ~= "" and tostring(session.url)) or URL_FALLBACK
-if url and url ~= "" then
+-- 3.1 สำเนาในเครื่องก่อน (อัปเดตพร้อมกับ GitHub ทุกครั้ง -> ได้เวอร์ชันล่าสุดทันที ไม่ต้องรอ CDN)
+if typeof(readfile) == "function" and typeof(isfile) == "function" and isfile("RT3_MasterSuite.lua") then
     loaded = pcall(function()
-        loadstring(game:HttpGet(url))()
+        loadstring(readfile("RT3_MasterSuite.lua"))()
     end)
-    if loaded then _G.RT3_LoadedFrom = "url" end
+    if loaded then _G.RT3_LoadedFrom = "local-copy" end
 end
 
--- 3.2 สำรอง: ไฟล์ที่ Master Suite เซฟไว้ให้
+-- 3.2 จาก URL (ในเซสชัน หรือ URL_FALLBACK)
+if not loaded then
+    local url = (session and tostring(session.url or "") ~= "" and tostring(session.url)) or URL_FALLBACK
+    if url and url ~= "" then
+        loaded = pcall(function()
+            loadstring(game:HttpGet(url))()
+        end)
+        if loaded then _G.RT3_LoadedFrom = "url" end
+    end
+end
+
+-- 3.3 สำรองสุดท้าย: ไฟล์ที่ Master Suite เซฟไว้ให้
 if not loaded and typeof(readfile) == "function" and typeof(isfile) == "function" and isfile("RT3_Self.lua") then
     loaded = pcall(function()
         loadstring(readfile("RT3_Self.lua"))()
     end)
     if loaded then _G.RT3_LoadedFrom = "file" end
-end
-
--- 3.3 สำรองสุดท้าย: ไฟล์สำเนาในเครื่อง (กรณี GitHub ล่ม / เน็ตมีปัญหา)
-if not loaded and typeof(readfile) == "function" and typeof(isfile) == "function" and isfile("RT3_MasterSuite.lua") then
-    loaded = pcall(function()
-        loadstring(readfile("RT3_MasterSuite.lua"))()
-    end)
-    if loaded then _G.RT3_LoadedFrom = "local-copy" end
 end
 
 _G.RT3_LoadOK = loaded
